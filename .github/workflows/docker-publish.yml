@@ -36,21 +36,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       
+      # --- 修复点 1: 安装完整的交叉编译依赖 ---
       - name: Install cross-compilation dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools clang lld
+          sudo apt-get install -y musl-tools clang lld gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
 
-      # --- 修复点 1: 安装 bindgen-cli ---
-      # 在编译之前，安装 bindgen 工具
       - name: Install bindgen-cli
         run: cargo install --force --locked bindgen-cli
 
-      # --- 修复点 2: 使用正确的链接器和参数进行编译 ---
+      # --- 修复点 2: 确保编译时环境变量正确 ---
       - name: Build static binary for ${{ matrix.target }}
         run: cargo build --release --target=${{ matrix.target }}
         env:
-          # 为每个目标平台明确指定使用 clang 作为 C 编译器，这是 bindgen 需要的
+          # 为每个目标平台明确指定使用 clang 作为 C 编译器
           CC_x86_64_unknown_linux_musl: clang
           CC_aarch64_unknown_linux_musl: clang
           CC_armv7_unknown_linux_musleabihf: clang
