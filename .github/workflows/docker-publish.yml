@@ -1,4 +1,4 @@
-name: Build and Publish to Docker Hub
+name: Build and Publish Multi-Arch Static Docker Image
 
 on:
   push:
@@ -13,7 +13,9 @@ jobs:
   # Job 1: 交叉编译所有架构的 MUSL 静态二进制文件
   build-binaries:
     name: Build static binaries
-    runs-on: ubuntu-latest
+    # 切换到 ARM Runner 以更好地匹配原作者的环境
+    runs-on: ubuntu-22.04-arm
+    
     strategy:
       matrix:
         include:
@@ -35,35 +37,31 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      
-      # --- 修复点 1: 安装完整的交叉编译依赖 ---
-      - name: Install cross-compilation dependencies
+
+      # 步骤 1: 安装与原作者一致的编译依赖
+      - name: Install LLVM and Cross-compilation Headers
         run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 19 all
           sudo apt-get update
-          sudo apt-get install -y musl-tools clang lld gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf
+          sudo apt-get install -y libgcc-11-dev-amd64-cross libgcc-11-dev-armhf-cross
 
-      - name: Install bindgen-cli
-        run: cargo install --force --locked bindgen-cli
-
-      # --- 修复点 2: 确保编译时环境变量正确 ---
+      # 步骤 2: 编译，并使用与原作者一致的环境变量
       - name: Build static binary for ${{ matrix.target }}
-        run: cargo build --release --target=${{ matrix.target }}
+        run: cargo build --verbose --release --target=${{ matrix.target }}
         env:
-          # 为每个目标平台明确指定使用 clang 作为 C 编译器
-          CC_x86_64_unknown_linux_musl: clang
-          CC_aarch64_unknown_linux_musl: clang
-          CC_armv7_unknown_linux_musleabihf: clang
+          # 设置全局的 C 和 C++ 编译器为 clang-19
+          CC: clang-19
+          CXX: clang-19
+          # 设置全局的 CFLAGS，使其使用 lld-19
+          CFLAGS: "-fuse-ld=lld-19 -Qunused-arguments"
+          CXXFLAGS: "-fuse-ld=lld-19 -Qunused-arguments"
           
-          # 告知 Cargo 使用 clang 和 lld 作为链接器
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: clang
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: clang
-          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER: clang
-          RUSTFLAGS: "-C linker=clang -C link-arg=-fuse-ld=lld"
-          
-          # 帮助 bindgen 找到正确的系统头文件
-          BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl: "--target=x86_64-unknown-linux-musl"
-          BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_musl: "--target=aarch64-unknown-linux-musl"
-          BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_musleabihf: "--target=armv7-unknown-linux-musleabihf"
+          # 为每个目标平台精确设置 RUSTFLAGS，这是解决链接器问题的关键
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=x86_64-unknown-linux-musl"
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=aarch64-unknown-linux-musl"
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
