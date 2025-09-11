@@ -4,16 +4,15 @@ on:
   push:
     branches: [ "master" ]
     tags: [ 'v*' ]
+  workflow_dispatch:
 
 env:
   IMAGE_REPO_NAME: hath-rust-docker
   HATH_RUST_VERSION: 'v1.12.1'
 
 jobs:
-  # Job 1: 交叉编译所有架构的 MUSL 静态二进制文件
   build-binaries:
     name: Build static binaries
-    # 切换到 ARM Runner 以更好地匹配原作者的环境
     runs-on: ubuntu-22.04-arm
     
     strategy:
@@ -38,7 +37,6 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 步骤 1: 安装与原作者一致的编译依赖
       - name: Install LLVM and Cross-compilation Headers
         run: |
           wget https://apt.llvm.org/llvm.sh
@@ -47,18 +45,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgcc-11-dev-amd64-cross libgcc-11-dev-armhf-cross
 
-      # 步骤 2: 编译，并使用与原作者一致的环境变量
       - name: Build static binary for ${{ matrix.target }}
         run: cargo build --verbose --release --target=${{ matrix.target }}
         env:
-          # 设置全局的 C 和 C++ 编译器为 clang-19
           CC: clang-19
           CXX: clang-19
-          # 设置全局的 CFLAGS，使其使用 lld-19
           CFLAGS: "-fuse-ld=lld-19 -Qunused-arguments"
           CXXFLAGS: "-fuse-ld=lld-19 -Qunused-arguments"
           
-          # 为每个目标平台精确设置 RUSTFLAGS，这是解决链接器问题的关键
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=x86_64-unknown-linux-musl"
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=aarch64-unknown-linux-musl"
           CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_RUSTFLAGS: "-Clinker=clang-19 -Clink-arg=-fuse-ld=lld-19 -Clink-arg=--target=armv7-unknown-linux-musleabihf"
@@ -70,8 +64,6 @@ jobs:
           path: target/${{ matrix.target }}/release/hath-rust
           retention-days: 1
 
-  # Job 2: 构建并发布多平台 Docker 镜像到 Docker Hub
-  # (此部分无需更改)
   build-and-push-docker:
     name: Build and Push Docker Image to Docker Hub
     needs: build-binaries
@@ -99,6 +91,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPO_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v6
         with:
