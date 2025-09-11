@@ -13,9 +13,7 @@ WORKDIR /hath
 
 # ---- Copy Binary ----
 # 根据目标架构从构建上下文中复制对应的静态编译二进制文件
-COPY artifacts/hath-rust-${TARGETARCH}/hath-rust /usr/local/bin/hath-rust
-
-RUN chmod +x /usr/local/bin/hath-rust
+COPY --chmod=755 artifacts/hath-rust-${TARGETARCH}/hath-rust /usr/local/bin/hath-rust
 
 # ---- Final Configuration ----
 # 以非 root 用户运行
