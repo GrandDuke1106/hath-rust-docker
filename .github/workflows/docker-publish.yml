@@ -2,19 +2,15 @@ name: Build and Publish to Docker Hub
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
     tags: [ 'v*' ]
-  workflow_dispatch:
 
 env:
-  # 您可以在这里定义镜像的基础名称
-  IMAGE_REPO_NAME: hath-rust-distroless
-  # 指定要克隆和编译的 hath-rust 版本
+  IMAGE_REPO_NAME: hath-rust-docker
   HATH_RUST_VERSION: 'v1.12.1'
 
 jobs:
   # Job 1: 交叉编译所有架构的 MUSL 静态二进制文件
-  # (此部分与之前的回答完全相同，无需改动)
   build-binaries:
     name: Build static binaries
     runs-on: ubuntu-latest
@@ -23,31 +19,53 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl
             arch: amd64
-          #- target: aarch64-unknown-linux-musl
-          #  arch: arm64
-          #- target: armv7-unknown-linux-musleabihf
-          #  arch: arm
+          - target: aarch64-unknown-linux-musl
+            arch: arm64
+          - target: armv7-unknown-linux-musleabihf
+            arch: arm
+
     steps:
       - name: Checkout hath-rust repository
         uses: actions/checkout@v4
         with:
           repository: 'james58899/hath-rust'
           ref: ${{ env.HATH_RUST_VERSION }}
+
       - name: Install Rust and musl target
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      
       - name: Install cross-compilation dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools clang lld
+
+      # --- 修复点 1: 安装 bindgen-cli ---
+      # 在编译之前，安装 bindgen 工具
+      - name: Install bindgen-cli
+        run: cargo install --force --locked bindgen-cli
+
+      # --- 修复点 2: 使用正确的链接器和参数进行编译 ---
       - name: Build static binary for ${{ matrix.target }}
         run: cargo build --release --target=${{ matrix.target }}
         env:
+          # 为每个目标平台明确指定使用 clang 作为 C 编译器，这是 bindgen 需要的
+          CC_x86_64_unknown_linux_musl: clang
+          CC_aarch64_unknown_linux_musl: clang
+          CC_armv7_unknown_linux_musleabihf: clang
+          
+          # 告知 Cargo 使用 clang 和 lld 作为链接器
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: clang
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: clang
           CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER: clang
           RUSTFLAGS: "-C linker=clang -C link-arg=-fuse-ld=lld"
+          
+          # 帮助 bindgen 找到正确的系统头文件
+          BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_musl: "--target=x86_64-unknown-linux-musl"
+          BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_musl: "--target=aarch64-unknown-linux-musl"
+          BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_musleabihf: "--target=armv7-unknown-linux-musleabihf"
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -56,46 +74,34 @@ jobs:
           retention-days: 1
 
   # Job 2: 构建并发布多平台 Docker 镜像到 Docker Hub
+  # (此部分无需更改)
   build-and-push-docker:
     name: Build and Push Docker Image to Docker Hub
     needs: build-binaries
     runs-on: ubuntu-latest
-    # `packages: write` 权限是用于 GHCR 的，如果只推送到 Docker Hub，可以移除
     permissions:
       contents: read
-
     steps:
       - name: Checkout repository with Dockerfile
         uses: actions/checkout@v4
-
       - name: Download all binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      # --- 修改点 1: 登录到 Docker Hub ---
-      # 移除了登录 GHCR 的步骤，换成登录 Docker Hub
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # --- 修改点 2: 更新镜像元数据 ---
-      # 将 images 指向您在 Docker Hub 上的仓库
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ vars.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPO_NAME }}
-
-      # --- 无需修改: build-and-push 会自动使用上面生成的标签 ---
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v6
         with:
