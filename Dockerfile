@@ -19,11 +19,11 @@ COPY --from=builder /etc/group /etc/group
 
 COPY --from=builder --chown=nonroot:nonroot /hath /hath
 
-COPY --chmod=755 artifacts/hath-rust-${TARGETARCH}/hath-rust /usr/local/bin/hath-rust
+COPY --chmod=755 artifacts/hath-rust-${TARGETARCH}/hath-rust /
 
 # ---- Final Configuration ----
 WORKDIR /hath
 
 USER nonroot:nonroot
 
-ENTRYPOINT ["/usr/local/bin/hath-rust"]
+ENTRYPOINT ["/hath-rust"]
