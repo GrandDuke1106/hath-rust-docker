@@ -102,4 +102,5 @@ If you prefer to have Docker manage the storage instead of binding it to a speci
 ## 🏷️ Image Tags
 
   * `latest`: Points to the most recent stable release.
-  * `vX.Y.Z` (e.g., `v1.12.1`): Points to a specific release version. Recommended for production environments to ensure reproducibility.
+  * `X.Y.Z` (e.g., `1.12.1`): Points to a specific release version. Recommended for production environments to ensure reproducibility.
+  * `master`: The master branch.
