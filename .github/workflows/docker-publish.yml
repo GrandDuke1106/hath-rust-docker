@@ -8,7 +8,7 @@ on:
 
 env:
   IMAGE_REPO_NAME: hath-rust-docker
-  HATH_RUST_VERSION: 'v1.12.2'
+  HATH_RUST_VERSION: 'v1.13.0'
 
 jobs:
   build-binaries:
